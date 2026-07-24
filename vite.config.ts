@@ -19,8 +19,8 @@ export default defineConfig({
         name: 'Market Pulse',
         short_name: 'MarketPulse',
         description: 'Cotizaciones del dolar, brecha cambiaria y acciones argentinas.',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#08110f',
+        background_color: '#08110f',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
@@ -48,6 +48,17 @@ export default defineConfig({
               cacheName: 'supabase-data',
               networkTimeoutSeconds: 5,
               expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // Fuentes de Google: cache-first para que la tipografia funcione offline.
+            urlPattern: ({ url }) =>
+              url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

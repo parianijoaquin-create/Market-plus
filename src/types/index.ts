@@ -55,6 +55,7 @@ export interface StockRow {
   name: string | null;
   price: number;
   change_pct: number | null;
+  prev_close: number | null;
   volume: number | null;
   quoted_at: string;
 }

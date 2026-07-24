@@ -28,7 +28,7 @@ export async function getLatestStocks(): Promise<StockRow[]> {
   // Traemos snapshots recientes con su asset y deduplicamos por asset en el cliente.
   const { data, error } = await supabase
     .from('price_snapshots')
-    .select('price, change_pct, volume, quoted_at, assets!inner(symbol, name, market_id)')
+    .select('price, change_pct, prev_close, volume, quoted_at, assets!inner(symbol, name, market_id)')
     .order('quoted_at', { ascending: false })
     .limit(1000);
   if (error) throw error;
@@ -38,6 +38,7 @@ export async function getLatestStocks(): Promise<StockRow[]> {
   for (const r of (data ?? []) as unknown as Array<{
     price: number;
     change_pct: number | null;
+    prev_close: number | null;
     volume: number | null;
     quoted_at: string;
     assets: { symbol: string; name: string | null; market_id: number };
@@ -50,6 +51,7 @@ export async function getLatestStocks(): Promise<StockRow[]> {
       name: r.assets?.name ?? null,
       price: r.price,
       change_pct: r.change_pct,
+      prev_close: r.prev_close,
       volume: r.volume,
       quoted_at: r.quoted_at,
     });
@@ -76,5 +78,23 @@ export function splitMovers(rows: StockRow[], count = 8) {
   return {
     gainers: sorted.slice(0, count),
     losers: sorted.slice(-count).reverse(),
+  };
+}
+
+/**
+ * Separa las acciones en subas (change_pct >= 0) y bajas (< 0), cada una
+ * ordenada por magnitud. `limit` acota (para el resumen del home).
+ */
+export function rankMovers(rows: StockRow[], limit?: number) {
+  const withPct = rows.filter((r) => r.change_pct != null);
+  const gainers = withPct
+    .filter((r) => (r.change_pct ?? 0) >= 0)
+    .sort((a, b) => (b.change_pct ?? 0) - (a.change_pct ?? 0));
+  const losers = withPct
+    .filter((r) => (r.change_pct ?? 0) < 0)
+    .sort((a, b) => (a.change_pct ?? 0) - (b.change_pct ?? 0));
+  return {
+    gainers: limit ? gainers.slice(0, limit) : gainers,
+    losers: limit ? losers.slice(0, limit) : losers,
   };
 }
