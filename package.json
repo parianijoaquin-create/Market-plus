@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "sync": "tsx sync/index.ts",
+    "sync": "tsx --env-file-if-exists=.env sync/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
