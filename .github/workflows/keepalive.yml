@@ -1,0 +1,26 @@
+name: keepalive
+
+# GitHub deshabilita los cron de un repo sin actividad por 60 dias.
+# Este workflow hace un commit vacio cada 3 semanas para reiniciar ese contador
+# y de paso mantiene vivo el proyecto Supabase (que se pausa a los 7 dias sin uso,
+# aunque el sync cada 15 min ya lo cubre).
+
+on:
+  schedule:
+    - cron: '0 6 1,21 * *' # dias 1 y 21 de cada mes, 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Empty commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: keepalive"
+          git push
