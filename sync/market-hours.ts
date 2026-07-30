@@ -37,16 +37,6 @@ export function isStockMarketOpen(date = new Date()): boolean {
   return mins >= 11 * 60 && mins <= 17 * 60 + 30;
 }
 
-/**
- * Ventana "activa" para el dolar: 10:00 a 20:00 ART.
- * Fuera de esa franja igual se puede consultar, pero con menor frecuencia
- * (esa decision la toma la frecuencia del cron, no esta funcion).
- */
-export function isFxActiveWindow(date = new Date()): boolean {
-  const { hour } = nowInArt(date);
-  return hour >= 10 && hour < 20;
-}
-
 /** Fecha de rueda (YYYY-MM-DD) en ART, para daily_prices. */
 export function tradeDateArt(date = new Date()): string {
   const art = new Date(date.getTime() + ART_OFFSET_HOURS * 60 * 60 * 1000);

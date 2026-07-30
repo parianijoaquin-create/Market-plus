@@ -90,7 +90,7 @@ async function main() {
 
   // 5) cerrar run
   const anyFail = results.some((r) => !r.ok);
-  const anyOk = results.some((r) => r.ok && r.rows >= 0);
+  const anyOk = results.some((r) => r.ok);
   const status = anyFail ? (anyOk ? 'partial' : 'failed') : 'ok';
   await db
     .from('sync_runs')
@@ -134,8 +134,6 @@ async function syncStocks(): Promise<number> {
 
   const stocks = await fetchArgStocks();
   const snapshots = [];
-  const dailies = [];
-  const today = tradeDateArt();
 
   for (const s of stocks) {
     const assetId = bySymbol.get(s.symbol);
@@ -149,13 +147,6 @@ async function syncStocks(): Promise<number> {
       source_id: SOURCE.data912,
       quoted_at: s.quoted_at,
     });
-    dailies.push({
-      asset_id: assetId,
-      trade_date: today,
-      close: s.price,
-      change_pct: s.change_pct,
-      volume: s.volume,
-    });
   }
 
   if (snapshots.length) {
@@ -164,14 +155,91 @@ async function syncStocks(): Promise<number> {
       .upsert(snapshots, { onConflict: 'asset_id,quoted_at', ignoreDuplicates: true });
     if (error) throw new Error(error.message);
   }
+
+  // Consolidar el cierre diario a partir de los snapshots de hoy (incluye el recien
+  // insertado). Se recalcula en cada corrida, asi que la ultima corrida del dia deja
+  // el OHLC final. Es necesario materializarlo ahora porque price_snapshots se purga
+  // a los 14 dias, mientras que daily_prices se conserva como historial permanente.
+  await rollUpDaily([...bySymbol.values()]);
+
+  return snapshots.length;
+}
+
+// Agrega los snapshots intradia de HOY en un cierre OHLC por accion y lo upsertea
+// en daily_prices. open = primer precio del dia, close/change_pct/volume = ultimo,
+// high/low = extremos. El volumen de data912 es acumulado del dia, por eso el ultimo.
+async function rollUpDaily(assetIds: number[]): Promise<void> {
+  if (!assetIds.length) return;
+  const today = tradeDateArt();
+  const { data, error } = await db
+    .from('price_snapshots')
+    .select('asset_id, price, change_pct, volume, quoted_at')
+    .gte('quoted_at', `${today}T00:00:00Z`)
+    .in('asset_id', assetIds);
+  if (error) throw new Error(error.message);
+
+  interface Agg {
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    change_pct: number | null;
+    volume: number | null;
+    openAt: string;
+    closeAt: string;
+  }
+  const byAsset = new Map<number, Agg>();
+  for (const r of (data ?? []) as Array<{
+    asset_id: number;
+    price: number;
+    change_pct: number | null;
+    volume: number | null;
+    quoted_at: string;
+  }>) {
+    const cur = byAsset.get(r.asset_id);
+    if (!cur) {
+      byAsset.set(r.asset_id, {
+        open: r.price,
+        high: r.price,
+        low: r.price,
+        close: r.price,
+        change_pct: r.change_pct,
+        volume: r.volume,
+        openAt: r.quoted_at,
+        closeAt: r.quoted_at,
+      });
+      continue;
+    }
+    if (r.price > cur.high) cur.high = r.price;
+    if (r.price < cur.low) cur.low = r.price;
+    if (r.quoted_at < cur.openAt) {
+      cur.open = r.price;
+      cur.openAt = r.quoted_at;
+    }
+    if (r.quoted_at > cur.closeAt) {
+      cur.close = r.price;
+      cur.closeAt = r.quoted_at;
+      cur.change_pct = r.change_pct;
+      cur.volume = r.volume;
+    }
+  }
+
+  const dailies = [...byAsset].map(([asset_id, a]) => ({
+    asset_id,
+    trade_date: today,
+    open: a.open,
+    high: a.high,
+    low: a.low,
+    close: a.close,
+    change_pct: a.change_pct,
+    volume: a.volume,
+  }));
   if (dailies.length) {
-    // upsert del cierre del dia: la ultima corrida del dia deja el cierre final.
-    const { error } = await db
+    const { error: upErr } = await db
       .from('daily_prices')
       .upsert(dailies, { onConflict: 'asset_id,trade_date' });
-    if (error) throw new Error(error.message);
+    if (upErr) throw new Error(upErr.message);
   }
-  return snapshots.length;
 }
 
 async function touchSource(sourceId: number) {
